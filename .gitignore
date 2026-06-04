@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Generated videos / media
+output/
+*.mp4
+*.mp3
+*.wav
+
+# Redis / Celery
+celerybeat-schedule
+celerybeat.pid
+dump.rdb
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
