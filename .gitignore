@@ -20,6 +20,12 @@ env/
 .env.*
 !.env.example
 
+# Local config (contains API keys)
+config.toml
+
+# Runtime storage
+storage/
+
 # IDE
 .vscode/
 .idea/
