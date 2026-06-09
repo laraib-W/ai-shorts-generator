@@ -84,8 +84,8 @@ def generate_audio(task_id, params, video_script):
         - sub_maker: subtitle maker object if TTS is used, None otherwise
     '''
     logger.info("\n\n## generating audio")
-    # /audio 和 /subtitle 请求模型不包含 custom_audio_file，
-    # 这里统一做兼容读取，避免直调接口时抛属性错误。
+    # /audio and /subtitle request models don't include custom_audio_file;
+    # use getattr for compatibility to avoid AttributeError on direct API calls.
     custom_audio_file = getattr(params, "custom_audio_file", None)
     if not custom_audio_file or not os.path.exists(custom_audio_file):
         if custom_audio_file:
@@ -337,8 +337,8 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=50)
 
-    # 仅完整视频生成流程才需要处理视频拼接模式；
-    # 这样可以避免 /subtitle 和 /audio 这类请求访问不存在的字段。
+    # Video concat mode only needs processing for the full video generation
+    # flow; skip for /subtitle and /audio requests that lack this field.
     if type(params.video_concat_mode) is str:
         params.video_concat_mode = VideoConcatMode(params.video_concat_mode)
 

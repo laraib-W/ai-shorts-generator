@@ -15,8 +15,9 @@ PUNCTUATIONS = [
     "：",
     "！",
     "...",
-    # 阿拉伯语常用标点也应作为自然断句点，避免脚本文本和 edge-tts
-    # 返回的字幕停顿边界不一致，导致后续逐行匹配失败。
+    # Arabic common punctuation should also serve as natural sentence break
+    # points, to avoid mismatches between script text and edge-tts subtitle
+    # pause boundaries that cause subsequent line-by-line matching to fail.
     "،",
     "؛",
     "؟",

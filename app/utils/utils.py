@@ -124,19 +124,19 @@ def public_dir(sub_dir: str = ""):
 
 def get_ffmpeg_binary() -> str:
     """
-    解析当前进程应该使用的 FFmpeg 可执行文件。
+    Resolve the FFmpeg executable that the current process should use.
 
-    增加原因：
-    1. 视频编码、静音音频生成、pydub 音频转码都依赖 FFmpeg；
-    2. Windows 便携包、Docker 和用户自定义安装目录经常出现 PATH 不一致；
-    3. 集中解析可以让所有调用方使用同一套优先级，减少某条链路能跑、
-       另一条链路找不到 FFmpeg 的现场问题。
+    Rationale:
+    1. Video encoding, silent audio generation, and pydub transcoding all need FFmpeg;
+    2. Windows portable builds, Docker, and custom install dirs often have inconsistent PATH;
+    3. Centralizing resolution gives every caller the same priority, reducing cases
+       where one code path works but another cannot find FFmpeg.
 
-    优先级：
-    1. IMAGEIO_FFMPEG_EXE：MoviePy/imageio 约定的显式配置；
-    2. 系统 PATH 中的 ffmpeg；
-    3. imageio-ffmpeg 依赖提供的内置二进制；
-    4. 字符串 "ffmpeg" 兜底，交给 subprocess 在运行时暴露更具体错误。
+    Priority:
+    1. IMAGEIO_FFMPEG_EXE: explicit config per MoviePy/imageio convention;
+    2. ffmpeg found on the system PATH;
+    3. Bundled binary from the imageio-ffmpeg package;
+    4. Bare string "ffmpeg" as fallback, letting subprocess surface a specific error.
     """
     configured_ffmpeg = os.environ.get("IMAGEIO_FFMPEG_EXE")
     if configured_ffmpeg:
@@ -225,10 +225,11 @@ def split_string_by_punctuations(s):
             continue
 
         if char == "," and previous_char.isdigit() and next_char.isdigit():
-            # 英文数字里的千分位逗号不是断句符，例如 "1,000 years"。
-            # Edge TTS 的 word boundary 通常会把这种数字整体作为连续内容返回；
-            # 如果这里拆成 "1" 和 "000 years"，后续字幕聚合会无法匹配脚本原文，
-            # 进而错误回退到 Whisper。
+            # Thousands-separator commas in numbers (e.g. "1,000 years") are not
+            # sentence breaks. Edge TTS word boundaries usually keep such numbers
+            # as a single unit; splitting into "1" and "000 years" here would break
+            # subsequent subtitle aggregation against the script, causing an
+            # incorrect fallback to Whisper.
             txt += char
             continue
 
@@ -245,12 +246,13 @@ def split_string_by_punctuations(s):
 
 def normalize_script_for_subtitle_matching(video_script: str) -> str:
     """
-    清理字幕匹配前的脚本文本。
+    Clean up script text before subtitle matching.
 
-    用户可能手动输入 Markdown 分隔符、标题强调或 `_` 这类格式符号。
-    这些字符通常不会出现在 TTS/Whisper 的识别结果里；如果继续参与
-    字幕逐行匹配，脚本行数量会大于真实字幕行数量，最终可能补出
-    `00:00:00,000 --> 00:00:00,000`，导致剪辑软件无法导入 SRT。
+    Users may manually enter Markdown separators, emphasis markers, or `_`
+    formatting symbols. These characters typically do not appear in TTS/Whisper
+    recognition output; if left in, the script line count exceeds the actual
+    subtitle count, potentially producing `00:00:00,000 --> 00:00:00,000`
+    entries that prevent editors from importing the SRT.
     """
     video_script = video_script or ""
     underscore_count = video_script.count("_")
@@ -259,8 +261,9 @@ def normalize_script_for_subtitle_matching(video_script: str) -> str:
     removed_separator_lines = 0
     for line in video_script.splitlines():
         line = line.strip()
-        # Markdown 分隔符或强调符号单独成行时不会被 TTS 朗读，必须从
-        # 脚本行里移除，避免字幕聚合卡在这类“不可发声”的目标行上。
+        # Standalone Markdown separators or emphasis lines are not spoken by TTS,
+        # so they must be removed to prevent subtitle aggregation from stalling
+        # on these "unspeakable" target lines.
         if re.fullmatch(r"[-*_]{3,}", line):
             removed_separator_lines += 1
             continue
@@ -295,8 +298,9 @@ def get_system_locale():
 
 @lru_cache(maxsize=None)
 def load_locales(i18n_dir):
-    # WebUI 每次交互都会触发 Streamlit 重新执行脚本，语言文件运行期不会变化，
-    # 因此缓存解析结果，避免反复读取和解析所有 i18n JSON 文件。
+    # Every WebUI interaction triggers a Streamlit script re-run, but locale files
+    # do not change at runtime. Cache the parsed results to avoid repeatedly reading
+    # and parsing all i18n JSON files.
     _locales = {}
     for root, dirs, files in os.walk(i18n_dir):
         for file in files:
