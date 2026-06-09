@@ -28,8 +28,9 @@ class TaskManager:
                 self.execute_task(func, *args, **kwargs)
             else:
                 queue_size = self.queue_size()
-                # 并发数已满时才进入排队。队列必须有上限，否则匿名接口可以持续
-                # 堆积任务对象和请求参数，最终造成内存耗尽或第三方 API 成本失控。
+                # Only queue when concurrency is full. The queue must have an upper
+                # limit; otherwise anonymous callers can keep piling up task objects
+                # and request params, eventually exhausting memory or API budgets.
                 if queue_size >= self.max_queued_tasks:
                     logger.warning(
                         f"reject task: {func.__name__}, queue_size: {queue_size}, "

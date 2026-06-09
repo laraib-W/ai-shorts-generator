@@ -50,7 +50,7 @@ h1 {
 """
 st.markdown(streamlit_style, unsafe_allow_html=True)
 
-# 定义资源目录
+# Define resource directories
 font_dir = os.path.join(root_dir, "resource", "fonts")
 song_dir = os.path.join(root_dir, "resource", "songs")
 i18n_dir = os.path.join(root_dir, "webui", "i18n")
@@ -73,13 +73,14 @@ if "use_custom_system_prompt" not in st.session_state:
 if "ui_language" not in st.session_state:
     st.session_state["ui_language"] = config.ui.get("language", system_locale)
 if "local_video_materials" not in st.session_state:
-    # 记住用户最近一次已经落盘的本地素材，避免仅修改文案后二次生成时丢失素材列表。
+    # Remember the most recently persisted local materials to avoid losing the
+    # material list when regenerating after only editing the script.
     st.session_state["local_video_materials"] = []
 
-# 加载语言文件
+# Load language files
 locales = utils.load_locales(i18n_dir)
 
-# 创建一个顶部栏，包含标题和语言选择
+# Create a top bar with title and language selector
 title_col, lang_col = st.columns([3, 1])
 
 with title_col:
@@ -139,15 +140,17 @@ def get_all_songs():
 
 def open_task_folder(task_id):
     try:
-        # task_id 应始终是服务端生成的 UUID。这里先做格式校验，避免异常值
-        # 通过路径拼接访问任务目录之外的位置，也避免后续打开目录时触发
-        # 平台 shell 对特殊字符的解释。
+        # task_id should always be a server-generated UUID. Validate format first
+        # to prevent abnormal values from accessing paths outside the task directory
+        # via path concatenation, and to avoid platform shell interpretation of
+        # special characters when opening the directory.
         normalized_task_id = str(UUID(str(task_id)))
         tasks_root = os.path.abspath(os.path.join(root_dir, "storage", "tasks"))
         path = os.path.abspath(os.path.join(tasks_root, normalized_task_id))
 
-        # 即使 UUID 校验通过，也再次确认最终路径仍在任务根目录内，避免
-        # 未来调用方调整 task_id 来源时引入路径穿越风险。
+        # Even after UUID validation passes, verify the final path is still within
+        # the tasks root directory to prevent path traversal if the task_id source
+        # changes in the future.
         if not path.startswith(tasks_root + os.sep):
             logger.warning(f"invalid task folder path: {path}")
             return
@@ -180,14 +183,14 @@ def init_log():
     _lvl = "DEBUG"
 
     def format_record(record):
-        # 获取日志记录中的文件全路径
+        # Get the full file path from the log record
         file_path = record["file"].path
-        # 将绝对路径转换为相对于项目根目录的路径
+        # Convert absolute path to a path relative to the project root
         relative_path = os.path.relpath(file_path, root_dir)
-        # 更新记录中的文件路径
+        # Update the file path in the record
         record["file"].path = f"./{relative_path}"
-        # 返回修改后的格式字符串
-        # 您可以根据需要调整这里的格式
+        # Return the modified format string
+        # Adjust the format here as needed
         record["message"] = record["message"].replace(root_dir, ".")
 
         _format = (
@@ -217,7 +220,7 @@ def tr(key):
     return loc.get("Translation", {}).get(key, key)
 
 
-# 创建基础设置折叠框
+# Create basic settings expander
 if not config.app.get("hide_config", False):
     with st.expander(tr("Basic Settings"), expanded=False):
         config_panels = st.columns(3)
@@ -225,28 +228,28 @@ if not config.app.get("hide_config", False):
         middle_config_panel = config_panels[1]
         right_config_panel = config_panels[2]
 
-        # 左侧面板 - 日志设置
+        # Left panel - log settings
         with left_config_panel:
-            # 是否隐藏配置面板
+            # Whether to hide the config panel
             hide_config = st.checkbox(
                 tr("Hide Basic Settings"), value=config.app.get("hide_config", False)
             )
             config.app["hide_config"] = hide_config
 
-            # 是否禁用日志显示
+            # Whether to disable log display
             hide_log = st.checkbox(
                 tr("Hide Log"), value=config.ui.get("hide_log", False)
             )
             config.ui["hide_log"] = hide_log
 
-        # 中间面板 - LLM 设置
+        # Middle panel - LLM settings
 
         with middle_config_panel:
             st.write(tr("LLM Settings"))
-            # 下拉框需要展示“AIHubMix（推荐）”这类面向用户的文案，
-            # 但配置文件和后端逻辑必须继续使用稳定的小写 provider id。
-            # 因此这里显式维护 display label 和 provider id 的映射，避免
-            # UI 文案变化污染 `config.app["llm_provider"]`。
+            # The dropdown shows user-facing labels like "AIHubMix (recommended)",
+            # but config and backend logic must use stable lowercase provider ids.
+            # Maintain an explicit mapping between display labels and provider ids
+            # to prevent UI copy changes from polluting `config.app["llm_provider"]`.
             llm_provider_options = [
                 ("OpenAI", "openai"),
                 ("AIHubMix（推荐）", "aihubmix"),
@@ -359,7 +362,7 @@ if not config.app.get("hide_config", False):
             if llm_provider == "oneapi":
                 if not llm_model_name:
                     llm_model_name = (
-                        "claude-3-5-sonnet-20240620"  # 默认模型，可以根据需要调整
+                        "claude-3-5-sonnet-20240620"  # Default model, adjust as needed
                     )
                 with llm_helper:
                     tips = """
@@ -499,9 +502,10 @@ if not config.app.get("hide_config", False):
                             """
 
             if tips and config.ui["language"] == "zh":
-                # AIHubMix 自身就是 OpenAI-compatible 聚合平台；用户主动选择
-                # 该 provider 时，再显示 DeepSeek/Moonshot 的通用推荐会造成
-                # 信息干扰，也不利于保持合作入口的轻量、清晰。
+                # AIHubMix is itself an OpenAI-compatible aggregation platform;
+                # showing the generic DeepSeek/Moonshot recommendation when the
+                # user explicitly chose this provider would be distracting and
+                # dilute the focused partner entry point.
                 if llm_provider != "aihubmix":
                     st.warning(
                         "中国用户建议使用 **DeepSeek** 或 **Moonshot** 作为大模型提供商\n- 国内可直接访问，不需要VPN \n- 注册就送额度，基本够用"
@@ -543,7 +547,7 @@ if not config.app.get("hide_config", False):
                 if st_llm_account_id:
                     config.app[f"{llm_provider}_account_id"] = st_llm_account_id
 
-        # 右侧面板 - API 密钥设置
+        # Right panel - API key settings
         with right_config_panel:
 
             def get_keys_from_config(cfg_key):
@@ -710,7 +714,7 @@ with middle_panel:
         config.app["video_source"] = params.video_source
 
         if params.video_source == "local":
-            # Streamlit 的文件类型校验对扩展名大小写敏感，这里同时放行大小写两种形式。
+            # Streamlit's file type validation is case-sensitive; allow both cases.
             local_file_types = ["mp4", "mov", "avi", "flv", "mkv", "jpg", "jpeg", "png"]
             uploaded_files = st.file_uploader(
                 "Upload Local Files",
@@ -732,7 +736,7 @@ with middle_panel:
             video_concat_modes[selected_index][1]
         )
 
-        # 视频转场模式
+        # Video transition mode
         video_transition_modes = [
             (tr("None"), VideoTransitionMode.none.value),
             (tr("Shuffle"), VideoTransitionMode.shuffle.value),
@@ -800,7 +804,7 @@ with middle_panel:
     with st.container(border=True):
         st.write(tr("Audio Settings"))
 
-        # 添加TTS服务器选择下拉框
+        # Add TTS server selection dropdown
         tts_servers = [
             (voice.NO_VOICE_NAME, tr("No Voice")),
             ("azure-tts-v1", "Azure TTS V1"),
@@ -810,7 +814,7 @@ with middle_panel:
             ("mimo-tts", "Xiaomi MiMo TTS"),
         ]
 
-        # 获取保存的TTS服务器，默认为v1
+        # Get the saved TTS server, default to v1
         saved_tts_server = config.ui.get("tts_server", "azure-tts-v1")
         saved_tts_server_index = 0
         for i, (server_value, _) in enumerate(tts_servers):
@@ -828,34 +832,35 @@ with middle_panel:
         selected_tts_server = tts_servers[selected_tts_server_index][0]
         config.ui["tts_server"] = selected_tts_server
 
-        # 根据选择的TTS服务器获取声音列表
+        # Get the voice list based on the selected TTS server
         filtered_voices = []
 
         if selected_tts_server == voice.NO_VOICE_NAME:
-            # 无配音是显式模式，只提供一个稳定 sentinel。这样普通 TTS 的空配置
-            # 不会被误判为静音，后端也能继续通过同一条音频/字幕流程生成视频。
+            # "No voice" is an explicit mode with a single stable sentinel. This way
+            # an empty TTS config is not mistaken for silence, and the backend can
+            # still generate video through the same audio/subtitle pipeline.
             filtered_voices = [voice.NO_VOICE_NAME]
         elif selected_tts_server == "siliconflow":
-            # 获取硅基流动的声音列表
+            # Get SiliconFlow voice list
             filtered_voices = voice.get_siliconflow_voices()
         elif selected_tts_server == "gemini-tts":
-            # 获取Gemini TTS的声音列表
+            # Get Gemini TTS voice list
             filtered_voices = voice.get_gemini_voices()
         elif selected_tts_server == "mimo-tts":
-            # 获取 Xiaomi MiMo TTS 的预置音色列表
+            # Get Xiaomi MiMo TTS preset voice list
             filtered_voices = voice.get_mimo_voices()
         else:
-            # 获取Azure的声音列表
+            # Get Azure voice list
             all_voices = voice.get_all_azure_voices(filter_locals=None)
 
-            # 根据选择的TTS服务器筛选声音
+            # Filter voices based on the selected TTS server
             for v in all_voices:
                 if selected_tts_server == "azure-tts-v2":
-                    # V2版本的声音名称中包含"v2"
+                    # V2 voice names contain "v2"
                     if "V2" in v:
                         filtered_voices.append(v)
                 else:
-                    # V1版本的声音名称中不包含"v2"
+                    # V1 voice names do not contain "v2"
                     if "V2" not in v:
                         filtered_voices.append(v)
 
@@ -872,21 +877,21 @@ with middle_panel:
         saved_voice_name = config.ui.get("voice_name", "")
         saved_voice_name_index = 0
 
-        # 检查保存的声音是否在当前筛选的声音列表中
+        # Check if the saved voice is in the current filtered voice list
         if saved_voice_name in friendly_names:
             saved_voice_name_index = list(friendly_names.keys()).index(saved_voice_name)
         else:
-            # 如果不在，则根据当前UI语言选择一个默认声音
+            # If not found, select a default voice based on the current UI language
             for i, v in enumerate(filtered_voices):
                 if v.lower().startswith(st.session_state["ui_language"].lower()):
                     saved_voice_name_index = i
                     break
 
-        # 如果没有找到匹配的声音，使用第一个声音
+        # If no matching voice found, use the first one
         if saved_voice_name_index >= len(friendly_names) and friendly_names:
             saved_voice_name_index = 0
 
-        # 确保有声音可选
+        # Ensure there are voices available to select
         if friendly_names:
             selected_friendly_name = st.selectbox(
                 tr("Speech Synthesis"),
@@ -902,7 +907,7 @@ with middle_panel:
             params.voice_name = voice_name
             config.ui["voice_name"] = voice_name
         else:
-            # 如果没有声音可选，显示提示信息
+            # If no voices available, show a warning message
             st.warning(
                 tr(
                     "No voices available for the selected TTS server. Please select another server."
@@ -911,7 +916,8 @@ with middle_panel:
             params.voice_name = ""
             config.ui["voice_name"] = ""
 
-        # 无配音模式会生成静音占位音频，不展示试听按钮，避免用户误以为需要测试声音。
+        # No-voice mode generates a silent placeholder audio; hide the play button
+        # to avoid misleading the user into thinking they need to test a voice.
         if (
             friendly_names
             and selected_tts_server != voice.NO_VOICE_NAME
@@ -948,7 +954,7 @@ with middle_panel:
                     if os.path.exists(audio_file):
                         os.remove(audio_file)
 
-        # 当选择V2版本或者声音是V2声音时，显示服务区域和API key输入框
+        # When V2 is selected or the voice is a V2 voice, show region and API key inputs
         if selected_tts_server == "azure-tts-v2" or (
             voice_name and voice.is_azure_v2_voice(voice_name)
         ):
@@ -968,7 +974,7 @@ with middle_panel:
             config.azure["speech_region"] = azure_speech_region
             config.azure["speech_key"] = azure_speech_key
 
-        # 当选择硅基流动时，显示API key输入框和说明信息
+        # When SiliconFlow is selected, show API key input and info
         if selected_tts_server == "siliconflow" or (
             voice_name and voice.is_siliconflow_voice(voice_name)
         ):
@@ -981,7 +987,7 @@ with middle_panel:
                 key="siliconflow_api_key_input",
             )
 
-            # 显示硅基流动的说明信息
+            # Show SiliconFlow configuration info
             st.info(
                 tr("SiliconFlow TTS Settings")
                 + ":\n"
@@ -994,8 +1000,9 @@ with middle_panel:
 
             config.siliconflow["api_key"] = siliconflow_api_key
 
-        # 当选择 Xiaomi MiMo TTS 时，复用 MiMo LLM provider 的 API Key。
-        # 这样用户如果同时使用 MiMo 生成文案和语音，只需要维护一份密钥。
+        # When Xiaomi MiMo TTS is selected, reuse the MiMo LLM provider API key.
+        # This way users who use MiMo for both script generation and TTS only need
+        # to maintain a single key.
         if selected_tts_server == "mimo-tts" or (
             voice_name and voice.is_mimo_voice(voice_name)
         ):
@@ -1072,11 +1079,13 @@ with middle_panel:
                 tr("Custom Background Music File"), key="custom_bgm_file_input"
             )
             if custom_bgm_file:
-                # 这里不直接用 os.path.exists 判断，因为用户常见输入是
-                # output000.mp3，这个文件名需要由服务层映射到 resource/songs
-                # 目录后再校验。服务层会统一限制目录和文件类型，避免任意路径读取。
+                # Do not use os.path.exists directly here, because the typical user
+                # input is a bare filename like output000.mp3 that the service layer
+                # maps to the resource/songs directory before validation. The service
+                # layer enforces directory and file type restrictions to prevent
+                # arbitrary path reads.
                 params.bgm_file = custom_bgm_file.strip()
-                # st.write(f":red[已选择自定义背景音乐]：**{custom_bgm_file}**")
+                # st.write(f":red[Custom background music selected]: **{custom_bgm_file}**")
         params.bgm_volume = st.selectbox(
             tr("Background Music Volume"),
             options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
@@ -1179,8 +1188,9 @@ with right_panel:
         saved_rounded_subtitle_background = config.ui.get(
             "rounded_subtitle_background", False
         )
-        # 背景关闭时，圆角背景没有可渲染的底色。这里禁用控件并保留原配置，
-        # 用户下次重新开启字幕背景后，可以继续使用之前保存的圆角偏好。
+        # When background is off, rounded background has no color to render.
+        # Disable the control but preserve the original config so the user can
+        # resume their saved rounded preference when subtitle background is re-enabled.
         params.rounded_subtitle_background = st.checkbox(
             tr("Rounded Subtitle Background"),
             value=(
@@ -1285,8 +1295,9 @@ if start_button:
 
     if uploaded_audio_file:
         task_dir = utils.task_dir(task_id)
-        # 上传文件名来自浏览器，不能直接拼到磁盘路径里；这里只保留扩展名，
-        # 并使用固定文件名保存到当前任务目录，避免路径穿越或特殊字符问题。
+        # The upload filename comes from the browser and cannot be used directly in
+        # disk paths. Keep only the extension and save with a fixed filename in the
+        # task directory to prevent path traversal or special character issues.
         _, audio_ext = os.path.splitext(os.path.basename(uploaded_audio_file.name))
         audio_ext = audio_ext.lower() or ".mp3"
         custom_audio_path = os.path.join(task_dir, f"custom-audio{audio_ext}")
@@ -1296,7 +1307,8 @@ if start_button:
 
     if uploaded_files:
         local_videos_dir = utils.storage_dir("local_videos", create=True)
-        # 每次重新上传时都以本次选择的素材为准，避免旧素材不断重复追加。
+        # On each re-upload, use only the currently selected materials to avoid
+        # old materials being repeatedly appended.
         params.video_materials = []
         persisted_local_materials = []
         for file in uploaded_files:
@@ -1314,10 +1326,12 @@ if start_button:
                         "duration": m.duration,
                     }
                 )
-        # 将已上传并保存到本地的视频素材写入会话，供后续只改文案时直接复用。
+        # Save uploaded and persisted video materials to the session for reuse
+        # when only the script is changed later.
         st.session_state["local_video_materials"] = persisted_local_materials
     elif params.video_source == "local" and st.session_state["local_video_materials"]:
-        # 当用户没有重新上传文件时，复用最近一次已经保存到磁盘的本地素材列表。
+        # When the user does not re-upload files, reuse the most recently persisted
+        # local material list.
         params.video_materials = []
         for material in st.session_state["local_video_materials"]:
             m = MaterialInfo()

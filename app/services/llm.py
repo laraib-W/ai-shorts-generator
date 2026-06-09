@@ -39,9 +39,9 @@ Generate a script for a video, depending on the subject of the video.
 
 
 def _normalize_text_response(content, llm_provider: str) -> str:
-    # 不同 LLM SDK 在异常或被拦截场景下，可能返回 None、空字符串，
-    # 甚至返回非字符串对象。这里统一做兜底校验，避免后续直接调用
-    # `.replace()` 时抛出 `NoneType` 之类的属性错误。
+    # Different LLM SDKs may return None, empty strings, or even non-string
+    # objects when blocked or encountering errors. Validate here to prevent
+    # AttributeError (e.g. on NoneType) when calling `.replace()` downstream.
     if content is None:
         raise ValueError(f"[{llm_provider}] returned empty text content")
 
@@ -50,9 +50,10 @@ def _normalize_text_response(content, llm_provider: str) -> str:
             f"[{llm_provider}] returned non-text content: {type(content).__name__}"
         )
 
-    # MiniMax M3、DeepSeek R1 这类 reasoning 模型可能会把内部推理包在
-    # `<think>...</think>` 中返回。视频脚本和关键词只需要最终可朗读文本，
-    # 如果不在服务层统一清理，WebUI、字幕和配音都会把思考过程当正文处理。
+    # Reasoning models (e.g. MiniMax M3, DeepSeek R1) may wrap internal
+    # chain-of-thought in `<think>...</think>` blocks. Video scripts and
+    # keywords only need the final readable text; stripping here prevents
+    # the WebUI, subtitles, and TTS from treating reasoning traces as content.
     content = _THINK_BLOCK_RE.sub("", content)
     content = _UNCLOSED_THINK_BLOCK_RE.sub("", content).strip()
     if not content:
@@ -62,10 +63,9 @@ def _normalize_text_response(content, llm_provider: str) -> str:
 
 
 def _extract_chat_completion_text(response, llm_provider: str) -> str:
-    # OpenAI 兼容接口在异常场景下，可能返回没有 choices、
-    # 或者 choices/message/content 为空的响应对象。
-    # 这里统一做结构校验，避免出现 `NoneType is not subscriptable`
-    # 这类底层属性访问错误。
+    # OpenAI-compatible endpoints may return responses with missing choices
+    # or empty message/content under error conditions. Validate the structure
+    # here to prevent low-level `NoneType is not subscriptable` errors.
     choices = getattr(response, "choices", None)
     if not choices:
         raise ValueError(f"[{llm_provider}] returned empty choices")
@@ -80,7 +80,7 @@ def _extract_chat_completion_text(response, llm_provider: str) -> str:
 
 
 def _get_response_field(value, key: str):
-    """兼容 dict 和 SDK 响应对象的字段读取。"""
+    """Read a field from either a dict or an SDK response object."""
     if isinstance(value, dict):
         return value.get(key)
 
@@ -92,12 +92,12 @@ def _get_response_field(value, key: str):
 
 def _extract_qwen_generation_text(response) -> str:
     """
-    从 DashScope Generation 响应中提取文本。
+    Extract text from a DashScope Generation response.
 
-    Qwen 使用 `messages` 调用时返回的是 chat 结构：
-    `output.choices[0].message.content`；旧 completion 形态才会返回
-    `output.text`。这里两个路径都兼容，避免 `output.text` 为 None 时
-    继续 `.replace()` 触发不可诊断的 AttributeError。
+    When Qwen is called with `messages`, it returns a chat structure:
+    `output.choices[0].message.content`; the legacy completion form returns
+    `output.text`. Both paths are supported to avoid an undiagnosable
+    AttributeError when `output.text` is None.
     """
     output = _get_response_field(response, "output")
     choices = _get_response_field(output, "choices") if output else None
@@ -174,9 +174,9 @@ def _generate_response(prompt: str) -> str:
                 api_key = config.app.get("aihubmix_api_key")
                 model_name = config.app.get("aihubmix_model_name")
                 base_url = config.app.get("aihubmix_base_url", "")
-                # AIHubMix 兼容 OpenAI Chat Completions 协议。这里使用独立
-                # provider 保存合作方的默认网关和推荐模型，避免把推广链接、
-                # 默认模型等合作配置混进普通 OpenAI provider，影响现有用户。
+                # AIHubMix is OpenAI Chat Completions compatible. A separate
+                # provider keeps partner defaults (gateway, model) isolated
+                # from the generic OpenAI provider to avoid affecting users.
                 if not base_url:
                     base_url = "https://aihubmix.com/v1"
                 if not model_name:
@@ -194,8 +194,8 @@ def _generate_response(prompt: str) -> str:
                 api_key = config.app.get("gemini_api_key")
                 model_name = config.app.get("gemini_model_name")
                 base_url = config.app.get("gemini_base_url", "")
-                # Gemini 旧模型名已经陆续下线，这里自动兼容历史配置，
-                # 避免用户沿用旧值时直接收到 404。
+                # Deprecated Gemini model names are being retired; auto-fallback
+                # here prevents users with stale configs from getting 404 errors.
                 if not model_name:
                     model_name = _DEFAULT_GEMINI_MODEL
                 elif model_name in _DEPRECATED_GEMINI_MODELS:
@@ -228,10 +228,10 @@ def _generate_response(prompt: str) -> str:
                 api_key = config.app.get("mimo_api_key")
                 model_name = config.app.get("mimo_model_name")
                 base_url = config.app.get("mimo_base_url", "")
-                # Xiaomi MiMo 官方文档说明其兼容 OpenAI Chat Completions 协议。
-                # 这里使用独立 provider 保存默认地址和模型名，用户不用把 MiMo
-                # 当作 OpenAI 自定义 base_url 配置，也便于后续继续接入 MiMo
-                # 多模态或 TTS 能力时保持边界清晰。
+                # Xiaomi MiMo is OpenAI Chat Completions compatible. A dedicated
+                # provider stores the default URL and model so users don't need
+                # to configure MiMo as a custom OpenAI base_url, and future
+                # multimodal/TTS integrations stay cleanly separated.
                 if not base_url:
                     base_url = "https://api.xiaomimimo.com/v1"
                 if not model_name:
@@ -464,10 +464,10 @@ def _generate_response(prompt: str) -> str:
                 return _extract_chat_completion_text(response, llm_provider)
 
             if llm_provider == "azure":
-                # Azure OpenAI SDK 使用 `azure_endpoint` 和 `api_version` 生成专用请求地址，
-                # 不能继续复用下面普通 OpenAI-compatible 的 `base_url` 初始化逻辑。
-                # 这里在 Azure 分支内完成请求并立即返回，避免客户端被后续 fallback
-                # 覆盖，导致用户配置的 Azure 凭证通过校验但实际请求没有被使用。
+                # Azure OpenAI SDK uses `azure_endpoint` and `api_version` to build
+                # its own request URL, so it cannot reuse the generic OpenAI `base_url`
+                # init below. Complete the request and return here to prevent the
+                # client from being overwritten by the fallback path.
                 logger.info(f"requesting azure chat completion, model: {model_name}")
                 client = AzureOpenAI(
                     api_key=api_key,
@@ -549,9 +549,9 @@ def _limit_script_text(text: str | None, max_length: int, field_name: str) -> st
     if len(value) <= max_length:
         return value
 
-    # API 层已经用 Pydantic 做长度校验；这里继续兜底，是为了保护
-    # WebUI 或内部服务直接调用 generate_script 时不会把超长提示词发送给模型，
-    # 避免 token 成本异常和请求失败。
+    # The API layer already validates length via Pydantic; this fallback
+    # guards against WebUI or internal callers sending oversized prompts
+    # to the model, preventing unexpected token costs and request failures.
     logger.warning(
         f"{field_name} is too long and will be truncated to {max_length} characters."
     )
@@ -565,8 +565,9 @@ def _normalize_script_paragraph_number(paragraph_number: int | None) -> int:
         value = MIN_SCRIPT_PARAGRAPH_NUMBER
 
     if value < MIN_SCRIPT_PARAGRAPH_NUMBER or value > MAX_SCRIPT_PARAGRAPH_NUMBER:
-        # WebUI 和 API 都会限制范围；这里兜底处理内部调用，避免异常参数直接扩大
-        # LLM 生成成本或生成空结果。
+        # WebUI and API both enforce this range; this fallback handles internal
+        # callers to prevent extreme parameters from inflating LLM costs or
+        # producing empty results.
         logger.warning(
             "script paragraph_number is out of range and will be clamped: "
             f"{value}"
@@ -591,8 +592,9 @@ def build_script_prompt(
         custom_system_prompt, MAX_SCRIPT_SYSTEM_PROMPT_LENGTH, "custom_system_prompt"
     )
 
-    # 将“脚本生成规则”和“运行时上下文”分开拼接。这样高级用户即使覆盖默认
-    # system prompt，也不会漏掉视频主题、语言、段落数这些每次生成都必须带上的参数。
+    # Separate "script generation rules" from "runtime context" so that even
+    # if advanced users override the default system prompt, the video subject,
+    # language, and paragraph count are always included.
     prompt = custom_system_prompt or DEFAULT_SCRIPT_SYSTEM_PROMPT
     prompt += f"""
 
@@ -738,9 +740,10 @@ Please note that you must use English for generating video search terms; Chinese
                     try:
                         search_terms = json.loads(match.group())
                     except Exception as e:
-                        # 这里保留重试流程，但必须记录 LLM 返回的非标准 JSON，
-                        # 否则后续排查搜索词为空时无法定位
-                        # 是模型格式问题还是解析逻辑问题。
+                        # Keep the retry loop but log the non-standard JSON from
+                        # the LLM; otherwise it's impossible to tell whether
+                        # empty search terms are caused by a model format issue
+                        # or a parsing logic bug.
                         logger.warning(f"failed to generate video terms: {str(e)}")
 
         if search_terms and len(search_terms) > 0:
@@ -755,12 +758,13 @@ Please note that you must use English for generating video search terms; Chinese
 # =============================================================================
 # Social publishing metadata
 #
-# 根据视频主题和脚本生成发布到短视频平台时常用的 title、caption 和 hashtags。
-# 这块能力只复用现有 LLM provider，不接入任何外部发布服务，也不影响视频生成主链路。
+# Generate title, caption, and hashtags for short-video platforms based on
+# the video subject and script. Reuses existing LLM providers only; does not
+# connect to any external publishing service or affect the video pipeline.
 # =============================================================================
 
-# 不同平台的文案长度和 hashtag 数量偏好不同。这里使用保守上限，避免模型返回
-# 过长内容后调用方还需要二次裁剪。
+# Different platforms have different copy-length and hashtag-count preferences.
+# Conservative upper limits are used so callers don't need to re-truncate.
 SOCIAL_PLATFORMS = {
     "tiktok": {"title_max": 100, "caption_max": 2200, "hashtag_count": 5},
     "youtube_shorts": {"title_max": 100, "caption_max": 5000, "hashtag_count": 3},
@@ -780,8 +784,8 @@ SOCIAL_PLATFORM_LABELS = {
     "facebook_reels": "Facebook Reels",
 }
 
-# LLM 不可用时的通用兜底标签。这里故意不绑定某个国家或语种，保证 API
-# 对中文、英文、越南语等不同场景都能返回可用结构。
+# Generic fallback hashtags when the LLM is unavailable. Intentionally
+# language-neutral so the API returns a usable structure for any locale.
 DEFAULT_SOCIAL_HASHTAGS = [
     "#shorts",
     "#viral",
@@ -815,8 +819,8 @@ def _limit_social_text(text: str | None, max_length: int, field_name: str) -> st
     if len(value) <= max_length:
         return value
 
-    # API 层会限制长度；这里继续兜底，是为了保护内部调用或未来 WebUI
-    # 直接调用时不会把超长内容发送给模型，避免 token 成本异常。
+    # The API layer enforces length limits; this fallback protects internal
+    # or future WebUI callers from sending oversized content to the model.
     logger.warning(
         f"{field_name} is too long and will be truncated to {max_length} characters."
     )
@@ -843,17 +847,17 @@ def _clamp_text(text, max_length: int) -> str:
 
 def _normalize_hashtags(raw, count: int) -> List[str]:
     """
-    将 LLM 返回的 hashtag 统一整理成 `#tag` 格式。
+    Normalize LLM-returned hashtags into `#tag` format.
 
-    LLM 可能返回字符串、数组、带空格的词组、重复标签或包含标点的内容。
-    这里集中清洗，可以让接口响应结构稳定，也避免平台发布时出现空标签、
-    重复标签或不符合常见格式的 hashtag。
+    The LLM may return strings, arrays, phrases with spaces, duplicates, or
+    punctuation. Centralizing cleanup here keeps the API response stable and
+    prevents empty, duplicate, or malformed hashtags during publishing.
     """
     if isinstance(raw, str):
         candidates = re.split(r"[\s,]+", raw)
     elif isinstance(raw, (list, tuple)):
-        # 数组里的每一项视为一个完整标签，因此 "du lich" 会变成
-        # "#dulich"，而不是拆成两个标签。
+        # Each array entry is treated as a single tag, so "du lich" becomes
+        # "#dulich" rather than being split into two tags.
         candidates = [str(entry) for entry in raw]
     else:
         candidates = []
@@ -925,8 +929,9 @@ def _parse_social_metadata(response: str, platform: str) -> dict:
     try:
         data = json.loads(response)
     except Exception:
-        # 部分模型会在 JSON 外层包一段说明文字或 markdown fence。
-        # API 调用方只需要稳定结构，所以这里尝试提取第一个 JSON object。
+        # Some models wrap the JSON in explanatory text or markdown fences.
+        # Callers only need a stable structure, so try to extract the first
+        # JSON object.
         match = re.search(r"\{.*\}", response or "", re.DOTALL)
         if match:
             data = json.loads(match.group())
@@ -953,7 +958,8 @@ def _fallback_social_metadata(
 
     title = subject
     if not title and script:
-        # 没有主题时，用脚本第一句兜底生成 title，避免接口返回空标题。
+        # No subject provided; use the first sentence of the script as a
+        # fallback title to avoid returning an empty title.
         title = re.split(r"(?<=[.!?。！？])\s+", script)[0]
 
     return {
@@ -972,11 +978,11 @@ def generate_social_metadata(
     platform: str = DEFAULT_SOCIAL_PLATFORM,
 ) -> dict:
     """
-    生成短视频发布文案元数据。
+    Generate social publishing metadata for a short video.
 
-    返回结构固定为 `{"title": str, "caption": str, "hashtags": List[str]}`。
-    如果 LLM 不可用或返回格式异常，会降级为通用启发式结果，保证 API
-    调用方始终拿到可展示、可发布前编辑的数据结构。
+    Always returns `{"title": str, "caption": str, "hashtags": List[str]}`.
+    If the LLM is unavailable or returns malformed output, falls back to a
+    heuristic result so callers always receive a displayable, editable structure.
     """
     platform = _resolve_social_platform(platform)
     language = _normalize_social_language(language)
